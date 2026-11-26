@@ -19,7 +19,7 @@ import java.nio.file.Path;
  */
 public final class Natives {
     /** Has to match ABI_VERSION in native/src/lib.rs. */
-    public static final int ABI_VERSION = 1;
+    public static final int ABI_VERSION = 2;
 
     private static final String IMPL = "dev.oxidyn.panama.PanamaBackend";
 

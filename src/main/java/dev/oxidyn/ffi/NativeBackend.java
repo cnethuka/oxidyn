@@ -43,6 +43,25 @@ public interface NativeBackend {
      */
     void sortQuads(float[] centroids, int quads, float cx, float cy, float cz, long dst, int indexBytes);
 
+    // --- chunk fill ---
+
+    /** Address of a compiled noise handle, for embedding in a density program. */
+    long noiseAddress(Object handle);
+
+    /**
+     * Parses a flattened density program. Returns 0 if the native side
+     * rejects it, with the reason code in {@code error[0]}.
+     */
+    long genCreate(long[] words, int[] error);
+
+    void genFree(long program);
+
+    /**
+     * Runs doFill for one chunk. {@code ints}/{@code longs} are the
+     * FillParams fields in order. Returns 0 on success.
+     */
+    int genFill(long program, int[] ints, long[] longs, int[] pieces, int[] junctions, float[] kernel, byte[] out);
+
     // --- zlib ---
 
     long zlibBound(long length);
