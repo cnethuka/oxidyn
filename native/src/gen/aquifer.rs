@@ -106,6 +106,11 @@ pub struct Aquifer {
     statuses: Vec<Option<FluidStatus>>,
     prelim: HashMap<(i32, i32), i32>,
     pub should_schedule: bool,
+    /// the 12 candidate centres for the last grid cell asked about, in
+    /// vanilla's loop order, with their cache index (a centre always lies in
+    /// its own grid cell, so its status lives at the same index)
+    group_key: Option<(i32, i32, i32)>,
+    group: [((i32, i32, i32), usize); 12],
 }
 
 #[inline]
@@ -145,6 +150,8 @@ impl Aquifer {
             statuses: vec![None; total],
             prelim: HashMap::new(),
             should_schedule: false,
+            group_key: None,
+            group: [((0, 0, 0), 0); 12],
         }
     }
 
@@ -165,50 +172,33 @@ impl Aquifer {
             return Some(OUT_LAVA);
         }
 
-        let gx = (x - 5).div_euclid(16);
-        let gy = (y + 1).div_euclid(12);
-        let gz = (z - 5).div_euclid(16);
+        let key = ((x - 5).div_euclid(16), (y + 1).div_euclid(12), (z - 5).div_euclid(16));
+        if self.group_key != Some(key) {
+            self.load_group(key);
+        }
         let (mut d1st, mut d2nd, mut d3rd) = (i32::MAX, i32::MAX, i32::MAX);
-        let (mut p1st, mut p2nd, mut p3rd) = ((0, 0, 0), (0, 0, 0), (0, 0, 0));
-        for ox in 0..=1 {
-            for oy in -1..=1 {
-                for oz in 0..=1 {
-                    let (cx, cy, cz) = (gx + ox, gy + oy, gz + oz);
-                    let idx = self.index(cx, cy, cz);
-                    let loc = match self.locations[idx] {
-                        Some(l) => l,
-                        None => {
-                            let mut r = self.random.at(cx, cy, cz);
-                            let l = (
-                                cx * 16 + r.next_int_bounded(10),
-                                cy * 12 + r.next_int_bounded(9),
-                                cz * 16 + r.next_int_bounded(10),
-                            );
-                            self.locations[idx] = Some(l);
-                            l
-                        }
-                    };
-                    let (dx, dy, dz) = (loc.0 - x, loc.1 - y, loc.2 - z);
-                    let d = dx * dx + dy * dy + dz * dz;
-                    if d1st >= d {
-                        p3rd = p2nd;
-                        p2nd = p1st;
-                        p1st = loc;
-                        d3rd = d2nd;
-                        d2nd = d1st;
-                        d1st = d;
-                    } else if d2nd >= d {
-                        p3rd = p2nd;
-                        p2nd = loc;
-                        d3rd = d2nd;
-                        d2nd = d;
-                    } else if d3rd >= d {
-                        p3rd = loc;
-                        d3rd = d;
-                    }
-                }
+        let (mut i1st, mut i2nd, mut i3rd) = (0usize, 0usize, 0usize);
+        for (n, &(loc, _)) in self.group.iter().enumerate() {
+            let (dx, dy, dz) = (loc.0 - x, loc.1 - y, loc.2 - z);
+            let d = dx * dx + dy * dy + dz * dz;
+            if d1st >= d {
+                i3rd = i2nd;
+                i2nd = i1st;
+                i1st = n;
+                d3rd = d2nd;
+                d2nd = d1st;
+                d1st = d;
+            } else if d2nd >= d {
+                i3rd = i2nd;
+                i2nd = n;
+                d3rd = d2nd;
+                d2nd = d;
+            } else if d3rd >= d {
+                i3rd = n;
+                d3rd = d;
             }
         }
+        let (p1st, p2nd, p3rd) = (i1st, i2nd, i3rd);
 
         let s1 = self.status(ev, p1st);
         let sim12 = similarity(d1st, d2nd);
@@ -286,8 +276,38 @@ impl Aquifer {
         2.0 * (d12 + d10)
     }
 
-    fn status(&mut self, ev: &Eval, loc: (i32, i32, i32)) -> FluidStatus {
-        let idx = self.index(grid_x(loc.0), grid_y(loc.1), grid_x(loc.2));
+    /// Fills `group` for one grid cell: same loop order and the same lazily
+    /// randomised centres as vanilla's computeSubstance.
+    fn load_group(&mut self, key: (i32, i32, i32)) {
+        let mut n = 0;
+        for ox in 0..=1 {
+            for oy in -1..=1 {
+                for oz in 0..=1 {
+                    let (cx, cy, cz) = (key.0 + ox, key.1 + oy, key.2 + oz);
+                    let idx = self.index(cx, cy, cz);
+                    let loc = match self.locations[idx] {
+                        Some(l) => l,
+                        None => {
+                            let mut r = self.random.at(cx, cy, cz);
+                            let l = (
+                                cx * 16 + r.next_int_bounded(10),
+                                cy * 12 + r.next_int_bounded(9),
+                                cz * 16 + r.next_int_bounded(10),
+                            );
+                            self.locations[idx] = Some(l);
+                            l
+                        }
+                    };
+                    self.group[n] = (loc, idx);
+                    n += 1;
+                }
+            }
+        }
+        self.group_key = Some(key);
+    }
+
+    fn status(&mut self, ev: &Eval, slot: usize) -> FluidStatus {
+        let (loc, idx) = self.group[slot];
         if let Some(s) = self.statuses[idx] {
             return s;
         }
