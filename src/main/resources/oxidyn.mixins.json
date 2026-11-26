@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.oxidyn.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "noise.BlendedNoiseAccessor",
+    "noise.BlendedNoiseMixin",
+    "noise.DensityNoiseMixin",
+    "noise.ImprovedNoiseAccessor",
+    "noise.NormalNoiseAccessor",
+    "noise.NormalNoiseMixin",
+    "noise.PerlinNoiseAccessor",
+    "noise.ShiftedNoiseMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
