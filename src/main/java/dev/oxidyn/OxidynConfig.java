@@ -7,6 +7,7 @@ public final class OxidynConfig {
     public static final ModConfigSpec SPEC;
 
     public static final ModConfigSpec.BooleanValue NATIVE_NOISE;
+    public static final ModConfigSpec.BooleanValue NATIVE_CHUNK_FILL;
     public static final ModConfigSpec.BooleanValue NATIVE_TRANSLUCENT_SORT;
     public static final ModConfigSpec.BooleanValue NATIVE_REGION_ZLIB;
     public static final ModConfigSpec.IntValue REGION_ZLIB_LEVEL;
@@ -21,6 +22,10 @@ public final class OxidynConfig {
                 .comment("Sample Perlin/normal/blended noise in Rust when density functions fill whole arrays.",
                         "Output is bit-for-bit identical to vanilla (checked at startup).")
                 .define("nativeNoise", true);
+        NATIVE_CHUNK_FILL = b
+                .comment("Run the whole noise fill step (terrain shape, aquifers, ore veins) in Rust,",
+                        "one native call per chunk. Dimensions it can't handle exactly stay on vanilla.")
+                .define("nativeChunkFill", true);
         b.pop();
 
         b.push("rendering");

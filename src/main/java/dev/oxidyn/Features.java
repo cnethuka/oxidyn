@@ -10,6 +10,7 @@ import dev.oxidyn.ffi.Natives;
  */
 public final class Features {
     public static volatile boolean noise;
+    public static volatile boolean chunkFill;
     public static volatile boolean translucentSort;
     public static volatile boolean regionZlib;
     public static volatile boolean networkZlib;
@@ -30,18 +31,19 @@ public final class Features {
         boolean ok = backend != null;
 
         noise = ok && checks.noise() && OxidynConfig.NATIVE_NOISE.get();
+        chunkFill = ok && checks.noise() && OxidynConfig.NATIVE_CHUNK_FILL.get();
         translucentSort = ok && checks.sort() && OxidynConfig.NATIVE_TRANSLUCENT_SORT.get();
         regionZlib = ok && checks.zlib() && OxidynConfig.NATIVE_REGION_ZLIB.get();
         networkZlib = ok && checks.zlib() && OxidynConfig.NATIVE_NETWORK_ZLIB.get();
         regionZlibLevel = OxidynConfig.REGION_ZLIB_LEVEL.get();
         networkZlibLevel = OxidynConfig.NETWORK_ZLIB_LEVEL.get();
 
-        Oxidyn.LOG.info("Native paths: noise={}, translucentSort={}, regionZlib={}, networkZlib={}",
-                noise, translucentSort, regionZlib, networkZlib);
+        Oxidyn.LOG.info("Native paths: noise={}, chunkFill={}, translucentSort={}, regionZlib={}, networkZlib={}",
+                noise, chunkFill, translucentSort, regionZlib, networkZlib);
     }
 
     public static String summary() {
-        return "noise=" + noise + " translucentSort=" + translucentSort
+        return "noise=" + noise + " chunkFill=" + chunkFill + " translucentSort=" + translucentSort
                 + " regionZlib=" + regionZlib + " (level " + regionZlibLevel + ")"
                 + " networkZlib=" + networkZlib + " (level " + networkZlibLevel + ")";
     }
