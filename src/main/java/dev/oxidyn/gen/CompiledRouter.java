@@ -16,6 +16,8 @@ public final class CompiledRouter {
     private static final Cleaner CLEANER = Cleaner.create();
 
     final long program;
+    /** 0 = not checked yet, 1 = matches vanilla, -1 = doesn't (stay on vanilla) */
+    volatile int verified;
     // the native program points into these noise descriptors
     @SuppressWarnings({"unused", "FieldCanBeLocal"})
     private final List<Object> keepAlive;

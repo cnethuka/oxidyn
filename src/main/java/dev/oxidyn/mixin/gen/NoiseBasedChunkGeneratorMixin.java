@@ -35,7 +35,8 @@ public abstract class NoiseBasedChunkGeneratorMixin {
         if (!Features.chunkFill || blender != Blender.empty()) return;
         // same NoiseChunk vanilla would use; we only need its beardifier
         NoiseChunk noiseChunk = chunk.getOrCreateNoiseChunk(c -> createNoiseChunk(c, structures, blender, random));
-        if (NativeChunkFill.fill(settings.value(), random, chunk, noiseChunk, minCellY, cellCountY)) {
+        var picker = ((NoiseBasedChunkGeneratorAccessor) this).oxidyn$fluidPicker().get();
+        if (NativeChunkFill.fill(settings.value(), random, picker, chunk, noiseChunk, minCellY, cellCountY)) {
             cir.setReturnValue(chunk);
         }
     }

@@ -1,5 +1,6 @@
 package dev.oxidyn.gen;
 
+import dev.oxidyn.Oxidyn;
 import dev.oxidyn.ffi.NativeBackend;
 import dev.oxidyn.ffi.Natives;
 import dev.oxidyn.mixin.gen.BeardifierAccessor;
@@ -12,6 +13,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.levelgen.Aquifer;
 import net.minecraft.world.level.levelgen.Beardifier;
 import net.minecraft.world.level.levelgen.DensityFunctions;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -39,16 +41,33 @@ public final class NativeChunkFill {
     }
 
     /** @return false if this chunk has to go through vanilla instead */
-    public static boolean fill(NoiseGeneratorSettings settings, RandomState random, ChunkAccess chunk,
-                               NoiseChunk noiseChunk, int minCellY, int cellCountY) {
+    public static boolean fill(NoiseGeneratorSettings settings, RandomState random, Aquifer.FluidPicker picker,
+                               ChunkAccess chunk, NoiseChunk noiseChunk, int minCellY, int cellCountY) {
         if (SharedConstants.debugVoidTerrain(chunk.getPos())) return false;
         NoiseSettings ns = settings.noiseSettings().clampToHeightAccessor(chunk.getHeightAccessorForGeneration());
+        if (!verified(settings, ns, random, picker, chunk)) return false;
         int minX = chunk.getPos().getMinBlockX();
         int minZ = chunk.getPos().getMinBlockZ();
         byte[] out = compute(settings, ns, random, ((NoiseChunkAccessor) noiseChunk).oxidyn$beardifier(), minX, minZ, cellCountY);
         if (out == null) return false;
         write(settings, chunk, out, minCellY, cellCountY, ns.getCellWidth(), ns.getCellHeight(), minX, minZ);
         return true;
+    }
+
+    private static boolean verified(NoiseGeneratorSettings settings, NoiseSettings ns, RandomState random,
+                                    Aquifer.FluidPicker picker, ChunkAccess chunk) {
+        CompiledRouter router = ((NativeRouterHolder) (Object) random).oxidyn$compiledRouter();
+        if (router == null) return false;
+        if (router.verified == 0) {
+            synchronized (router) {
+                if (router.verified == 0) {
+                    boolean ok = FillVerifier.matches(settings, ns, random, picker, chunk.getPos().x, chunk.getPos().z);
+                    router.verified = ok ? 1 : -1;
+                    if (ok) Oxidyn.LOG.info("Native chunk fill verified against vanilla for this dimension");
+                }
+            }
+        }
+        return router.verified == 1;
     }
 
     /**
