@@ -4,6 +4,7 @@
 //! oxidyn_gen_fill per chunk and gets one byte per block back.
 
 pub mod aquifer;
+pub mod batch;
 pub mod beard;
 pub mod eval;
 pub mod fill;
