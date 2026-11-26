@@ -5,8 +5,8 @@
 //! Bump ABI_VERSION whenever an export changes shape. The Java side refuses to
 //! bind against a library that reports a different number.
 
-
 pub mod noise;
+pub mod sort;
 
 pub const ABI_VERSION: u32 = 1;
 
