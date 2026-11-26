@@ -6,10 +6,11 @@
 //! bind against a library that reports a different number.
 
 pub mod deflate;
+pub mod gen;
 pub mod noise;
 pub mod sort;
 
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 #[no_mangle]
 pub extern "C" fn oxidyn_abi_version() -> u32 {
