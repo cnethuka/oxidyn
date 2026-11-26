@@ -57,7 +57,8 @@ pub enum Node {
     Spline(u32),
     Interpolated { input: u32, slot: u32 },
     FlatCache { input: u32, slot: u32 },
-    Cache2D(u32),
+    /// keyed by x/z only; parse() rejects y-dependent inputs
+    Cache2D { input: u32, slot: u32 },
     CacheOnce { input: u32, slot: u32 },
     BlendAlpha,
     BlendOffset,
@@ -95,6 +96,7 @@ pub struct Program {
     pub interp_slots: u32,
     pub flat_slots: u32,
     pub once_slots: u32,
+    pub cache2d_slots: u32,
     /// node id of each FlatCache slot, in slot order (children before parents)
     pub flat_nodes: Vec<u32>,
     pub interp_nodes: Vec<u32>,
@@ -162,7 +164,7 @@ impl Program {
         let mut nodes: Vec<Node> = Vec::new();
         let mut splines: Vec<Spline> = Vec::new();
         let mut roots = [None; ROOT_COUNT];
-        let (mut interp_slots, mut flat_slots, mut once_slots) = (0u32, 0u32, 0u32);
+        let (mut interp_slots, mut flat_slots, mut once_slots, mut cache2d_slots) = (0u32, 0u32, 0u32, 0u32);
         let mut flat_nodes = Vec::new();
         let mut interp_nodes = Vec::new();
 
@@ -242,7 +244,10 @@ impl Program {
                     flat_slots += 1;
                     Node::FlatCache { input: node_ref(r.next()?)?, slot: flat_slots - 1 }
                 }
-                21 => Node::Cache2D(node_ref(r.next()?)?),
+                21 => {
+                    cache2d_slots += 1;
+                    Node::Cache2D { input: node_ref(r.next()?)?, slot: cache2d_slots - 1 }
+                }
                 22 => {
                     once_slots += 1;
                     Node::CacheOnce { input: node_ref(r.next()?)?, slot: once_slots - 1 }
@@ -298,7 +303,7 @@ impl Program {
             return Err(Reject::MissingFinalDensity);
         }
 
-        let p = Program { nodes, splines, roots, interp_slots, flat_slots, once_slots, flat_nodes, interp_nodes };
+        let p = Program { nodes, splines, roots, interp_slots, flat_slots, once_slots, cache2d_slots, flat_nodes, interp_nodes };
         p.check()?;
         Ok(p)
     }
@@ -314,7 +319,7 @@ impl Program {
             Node::Interpolated { input, .. }
             | Node::FlatCache { input, .. }
             | Node::CacheOnce { input, .. }
-            | Node::Cache2D(input)
+            | Node::Cache2D { input, .. }
             | Node::BlendDensity(input) => out.push(input),
             _ => {}
         }
@@ -356,7 +361,7 @@ impl Program {
                     reads_y[id] = true;
                     bare_once[id] = false;
                 }
-                Node::Cache2D(_) => {
+                Node::Cache2D { .. } => {
                     if cy {
                         return Err(Reject::YDependentCache2D);
                     }
