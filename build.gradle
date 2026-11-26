@@ -15,6 +15,28 @@ base {
 // classes stays on 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+// The FFM API only went final in Java 22 (on 21 it's a preview feature and
+// needs --enable-preview, which nobody's launcher passes). So the code that
+// actually talks to the linker lives in its own source set compiled for 22,
+// and the mod only loads it reflectively when it finds itself on 22+.
+sourceSets {
+    panama {
+        java.srcDir 'src/panama/java'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    }
+}
+
+tasks.named('compilePanamaJava', JavaCompile) {
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(panama_jdk as int)
+    }
+    options.release = 22
+}
+
+tasks.named('jar', Jar) {
+    from sourceSets.panama.output
+}
+
 neoForge {
     version = project.neo_version
 
@@ -27,6 +49,7 @@ neoForge {
             programArgument '--nogui'
         }
         configureEach {
+            jvmArgument '--enable-native-access=ALL-UNNAMED'
             systemProperty 'forge.logging.markers', 'REGISTRIES'
             logLevel = org.slf4j.event.Level.DEBUG
         }
@@ -35,6 +58,7 @@ neoForge {
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
+            sourceSet(sourceSets.panama)
         }
     }
 }
@@ -60,6 +84,57 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
 }
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
+
+// Dev runs default to the Java 21 toolchain, where the native path stays off.
+// Pass -Prun_jdk=22 (or newer) to actually exercise it.
+if (project.hasProperty('run_jdk')) {
+    tasks.matching { it.name in ['runClient', 'runServer'] }.configureEach {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(project.run_jdk as int)
+        }
+    }
+}
+
+// --- natives --------------------------------------------------------------
+
+static String hostPlatform() {
+    String os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    String arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    os = os.contains('win') ? 'windows' : (os.contains('mac') || os.contains('darwin')) ? 'macos' : 'linux'
+    arch = (arch in ['amd64', 'x86_64', 'x64']) ? 'x86_64' : (arch in ['aarch64', 'arm64']) ? 'aarch64' : arch
+    return "${os}-${arch}"
+}
+
+def cargoExe = providers.gradleProperty('cargo').orElse(provider {
+    def home = new File(System.getProperty('user.home'), '.cargo/bin/cargo')
+    home.exists() ? home.absolutePath : 'cargo'
+})
+
+def cargoBuild = tasks.register('cargoBuild', Exec) {
+    group = 'build'
+    description = 'Builds the Rust library for the host platform.'
+    onlyIf { !project.hasProperty('skipCargo') }
+    workingDir file('native')
+    commandLine cargoExe.get(), 'build', '--release', '--locked'
+    inputs.files fileTree('native/src'), file('native/Cargo.toml'), file('native/Cargo.lock')
+    outputs.dir file('native/target/release')
+}
+
+// Libraries end up in the jar under natives/<os>-<arch>/. The host build comes
+// from cargo; anything dropped into native/dist/<os>-<arch>/ (CI does this for
+// the other platforms) is bundled as well.
+def stageNatives = tasks.register('stageNatives', Sync) {
+    dependsOn cargoBuild
+    from(file('native/target/release')) {
+        include 'liboxidyn.so', 'liboxidyn.dylib', 'oxidyn.dll'
+        into "natives/${hostPlatform()}"
+    }
+    from(file('native/dist')) {
+        into 'natives'
+    }
+    into layout.buildDirectory.dir('natives')
+}
+sourceSets.main.resources.srcDir(stageNatives)
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
