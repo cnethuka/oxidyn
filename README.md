@@ -10,9 +10,9 @@ the same as without it, and the files it writes are normal vanilla files.
 ## Real-world results
 
 Pregenerating 1,681 fresh overworld chunks with NeoForge's
-`/neoforge generate` on a dedicated server (Java 22, 8 vCPU cloud VM). The
-same seed was used each time, two runs with Oxidyn and two without,
-alternating:
+`/neoforge generate` on a dedicated server (Java 22, a VM with 8 vCPUs on an
+AMD Ryzen 9 9950X host). The same seed was used each time, two runs with
+Oxidyn and two without, alternating:
 
 | | Vanilla | Oxidyn | |
 |---|---:|---:|---:|
@@ -44,7 +44,7 @@ still vanilla.
 | Packet compression | both | `Deflater`/`Inflater` in 8 KB steps through byte[] copies | libdeflate, straight from one ByteBuf's memory to the other's |
 
 Microbenchmarks of the individual pieces, from `./gradlew test -Pbench
--Prun_jdk=25` on the same VM. These are hand-rolled benchmarks, not JMH.
+-Prun_jdk=25` on the same machine. These are hand-rolled benchmarks, not JMH.
 Treat the numbers as ballpark.
 
 | Benchmark | Vanilla | Oxidyn | Speedup |
