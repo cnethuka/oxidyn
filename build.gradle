@@ -96,7 +96,10 @@ dependencies {
 }
 
 tasks.named('test', Test) {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        if (!project.hasProperty('bench')) excludeTags 'bench'
+    }
+    testLogging.showStandardStreams = project.hasProperty('bench')
 }
 
 // Dev runs and tests default to the Java 21 toolchain, where the native path
