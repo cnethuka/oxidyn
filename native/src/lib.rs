@@ -5,6 +5,7 @@
 //! Bump ABI_VERSION whenever an export changes shape. The Java side refuses to
 //! bind against a library that reports a different number.
 
+pub mod deflate;
 pub mod noise;
 pub mod sort;
 

@@ -9,6 +9,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+libdeflater = "1.25"
 
 [profile.release]
 opt-level = 3
