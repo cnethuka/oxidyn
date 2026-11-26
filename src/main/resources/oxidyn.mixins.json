@@ -4,6 +4,7 @@
   "package": "dev.oxidyn.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "compress.RegionFileVersionMixin",
     "noise.BlendedNoiseAccessor",
     "noise.BlendedNoiseMixin",
     "noise.DensityNoiseMixin",
