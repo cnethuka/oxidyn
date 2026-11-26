@@ -6,6 +6,8 @@
 //! bind against a library that reports a different number.
 
 
+pub mod noise;
+
 pub const ABI_VERSION: u32 = 1;
 
 #[no_mangle]
