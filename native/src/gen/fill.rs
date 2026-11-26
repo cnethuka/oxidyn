@@ -2,6 +2,7 @@
 //! (Java does that from the codes we return).
 
 use super::aquifer::*;
+use super::batch::{Batch, BatchKind, Memo};
 use super::beard::{Beard, JUNCTION_INTS, PIECE_INTS};
 use super::eval::*;
 use super::jmath::*;
@@ -84,8 +85,100 @@ pub fn fill(prog: &Program, p: &FillParams, pieces: &[i32], junctions: &[i32], k
     let ore = (p.flags & FLAG_ORE_VEINS != 0).then_some(Positional { lo: p.ore_lo, hi: p.ore_hi });
     let roots = prog.roots;
     let first_y = l.cell_min_y * l.cell_h;
-    let (w, h) = (l.cell_w, l.cell_h);
+    let rows = (l.cells_y as i32 * l.cell_h) as usize;
 
+    // Every cache involved is a pure function of position, so the work can
+    // be split into passes over the whole chunk instead of vanilla's single
+    // interleaved loop. Index of a block: ((y - first_y) * 16 + z) * 16 + x.
+    let index = |x: i32, y: i32, z: i32| (((y - first_y) * 16 + (z & 15)) * 16 + (x & 15)) as usize;
+
+    // 1. cacheAllInCell(add(finalDensity, beardifier)) for every block, one
+    // column of cells per batch
+    let mut density = vec![0.0f64; rows * 256];
+    let final_root = roots[ROOT_FINAL].expect("checked at parse time");
+    let (w, h) = (l.cell_w, l.cell_h);
+    let per_column = l.cells_y as usize * (h * w * w) as usize;
+    let all: Vec<u32> = (0..per_column as u32).collect();
+    let mut values = vec![0.0; per_column];
+    for cx in 0..l.cells_xz {
+        for cz in 0..l.cells_xz {
+            let mut b = Batch {
+                x: Vec::with_capacity(per_column),
+                y: Vec::with_capacity(per_column),
+                z: Vec::with_capacity(per_column),
+                kind: BatchKind::Cell {
+                    cx,
+                    cz,
+                    cy: Vec::with_capacity(per_column),
+                    fx: Vec::with_capacity(per_column),
+                    fy: Vec::with_capacity(per_column),
+                    fz: Vec::with_capacity(per_column),
+                },
+            };
+            let BatchKind::Cell { cy: ref mut bcy, ref mut fx, ref mut fy, ref mut fz, .. } = b.kind else { unreachable!() };
+            for cy in 0..l.cells_y {
+                for iy in 0..h {
+                    for ix in 0..w {
+                        for iz in 0..w {
+                            b.x.push(p.min_x + cx as i32 * w + ix);
+                            b.y.push((l.cell_min_y + cy as i32) * h + iy);
+                            b.z.push(p.min_z + cz as i32 * w + iz);
+                            bcy.push(cy);
+                            fx.push(ix as f64 / w as f64);
+                            fy.push(iy as f64 / h as f64);
+                            fz.push(iz as f64 / w as f64);
+                        }
+                    }
+                }
+            }
+            let mut memo = Memo::new(prog);
+            ev.eval_batch(final_root, &b, &all, &mut values, &mut memo);
+            let beard_empty = ev.beard.is_empty();
+            for k in 0..per_column {
+                let (x, y, z) = (b.x[k], b.y[k], b.z[k]);
+                // an empty beardifier still adds 0.0 in vanilla (turns -0.0 into 0.0)
+                let beard = if beard_empty { 0.0 } else { ev.beard.compute(x, y, z) };
+                density[index(x, y, z)] = values[k] + beard;
+            }
+        }
+    }
+
+    // 2. aquifer, then 3. ore veins where the aquifer left solid ground
+    let mut pending_ore = Vec::new();
+    for_each_block(l, p, |x, y, z, _, block| {
+        let i = index(x, y, z);
+        let d = density[i];
+        let result = if aquifers_on {
+            aquifer.compute_substance(&ev, x, y, z, block, d)
+        } else {
+            aquifer.should_schedule = false;
+            if d > 0.0 { None } else { Some(picker.compute(y).at_code(y)) }
+        };
+        out[i] = match result {
+            Some(code) => code | if aquifer.should_schedule { OUT_SCHEDULE } else { 0 },
+            None => {
+                if ore.is_some() {
+                    pending_ore.push((x, y, z, block));
+                }
+                OUT_DEFAULT_BLOCK
+            }
+        };
+    });
+
+    if let Some(ore) = ore {
+        for (x, y, z, block) in pending_ore {
+            if let Some(code) = ore_vein(&ev, ore, x, y, z, block) {
+                // solid ground, so the aquifer never asked for a fluid update here
+                out[index(x, y, z)] = code;
+            }
+        }
+    }
+}
+
+/// Visits every block doFill would, handing over both the cell-fill and the
+/// per-block interpolation mode for it.
+fn for_each_block(l: &Layout, p: &FillParams, mut f: impl FnMut(i32, i32, i32, Mode, Mode)) {
+    let (w, h) = (l.cell_w, l.cell_h);
     for cx in 0..l.cells_xz {
         for cz in 0..l.cells_xz {
             for cy in 0..l.cells_y {
@@ -98,29 +191,13 @@ pub fn fill(prog: &Program, p: &FillParams, pieces: &[i32], junctions: &[i32], k
                         for iz in 0..w {
                             let z = p.min_z + cz as i32 * w + iz;
                             let fz = iz as f64 / w as f64;
-
-                            let cell = Mode::Cell { cx, cy, cz, fx, fy, fz };
-                            // cacheAllInCell(add(finalDensity, beardifier))
-                            let density = eval_root(&ev, roots[ROOT_FINAL], Pt { x, y, z, mode: cell }) + ev.beard.compute(x, y, z);
-
-                            let block = Mode::Block { cx, cy, cz, dx: fx, dy: fy, dz: fz };
-                            let mut result = if aquifers_on {
-                                aquifer.compute_substance(&ev, x, y, z, block, density)
-                            } else {
-                                aquifer.should_schedule = false;
-                                if density > 0.0 { None } else { Some(picker.compute(y).at_code(y)) }
-                            };
-                            if result.is_none() {
-                                if let Some(ore) = ore {
-                                    result = ore_vein(&ev, ore, x, y, z, block);
-                                }
-                            }
-
-                            let mut code = result.unwrap_or(OUT_DEFAULT_BLOCK);
-                            if aquifer.should_schedule {
-                                code |= OUT_SCHEDULE;
-                            }
-                            out[(((y - first_y) * 16 + (z & 15)) * 16 + (x & 15)) as usize] = code;
+                            f(
+                                x,
+                                y,
+                                z,
+                                Mode::Cell { cx, cy, cz, fx, fy, fz },
+                                Mode::Block { cx, cy, cz, dx: fx, dy: fy, dz: fz },
+                            );
                         }
                     }
                 }

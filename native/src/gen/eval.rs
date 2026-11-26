@@ -8,6 +8,7 @@
 //!   Block - the per-block loop (aquifer barrier, ore veins), interpolators use
 //!           the incremental y -> x -> z lerps, which round differently
 
+use super::batch::{Batch, BatchKind, Memo};
 use super::beard::Beard;
 use super::jmath::*;
 use super::program::*;
@@ -68,6 +69,9 @@ pub struct Eval<'a> {
     once_stamp: Vec<Cell<u64>>,
     once_value: Vec<Cell<f64>>,
     stamp: Cell<u64>,
+    /// last (x, z) and value per Cache2D, like vanilla's lastPos2D
+    cache2d_pos: Vec<Cell<(i32, i32)>>,
+    cache2d_value: Vec<Cell<f64>>,
 }
 
 impl<'a> Eval<'a> {
@@ -82,6 +86,9 @@ impl<'a> Eval<'a> {
             once_stamp: (0..once).map(|_| Cell::new(0)).collect(),
             once_value: (0..once).map(|_| Cell::new(0.0)).collect(),
             stamp: Cell::new(0),
+            // i32::MIN never shows up as a real block coordinate
+            cache2d_pos: (0..prog.cache2d_slots).map(|_| Cell::new((i32::MIN, i32::MIN))).collect(),
+            cache2d_value: (0..prog.cache2d_slots).map(|_| Cell::new(0.0)).collect(),
         }
     }
 
@@ -113,26 +120,34 @@ impl<'a> Eval<'a> {
             self.flat[slot] = grid;
         }
 
-        let count = self.layout.corner_count();
+        // every corner as one batch; element i is corner i, and corners of a
+        // column sit next to each other (cache_2d relies on that)
         let (n, ny) = (self.layout.cells_xz + 1, self.layout.cells_y + 1);
-        for slot in 0..self.prog.interp_slots as usize {
-            let Node::Interpolated { input, .. } = self.prog.nodes[self.prog.interp_nodes[slot] as usize] else {
-                unreachable!()
-            };
-            let mut corners = vec![0.0; count];
-            for cx in 0..n {
-                let x = (self.layout.first_cell_x + cx as i32) * self.layout.cell_w;
-                for cz in 0..n {
-                    let z = (self.layout.first_cell_z + cz as i32) * self.layout.cell_w;
-                    for cy in 0..ny {
-                        let y = (cy as i32 + self.layout.cell_min_y) * self.layout.cell_h;
-                        self.next_point();
-                        corners[self.layout.corner(cx, cz, cy)] = self.eval(input, &Pt { x, y, z, mode: Mode::Slice });
-                    }
+        let count = self.layout.corner_count();
+        let mut batch = Batch { x: Vec::with_capacity(count), y: Vec::with_capacity(count), z: Vec::with_capacity(count), kind: BatchKind::Slice };
+        for cx in 0..n {
+            let x = (self.layout.first_cell_x + cx as i32) * self.layout.cell_w;
+            for cz in 0..n {
+                let z = (self.layout.first_cell_z + cz as i32) * self.layout.cell_w;
+                for cy in 0..ny {
+                    batch.x.push(x);
+                    batch.y.push((cy as i32 + self.layout.cell_min_y) * self.layout.cell_h);
+                    batch.z.push(z);
                 }
             }
-            self.interp[slot] = corners;
         }
+        let all: Vec<u32> = (0..count as u32).collect();
+        // one memo for all interpolators: CacheOnce is shared across them, like
+        // vanilla's per-column array cache
+        let mut memo = Memo::new(self.prog);
+        let mut corners = Vec::with_capacity(self.prog.interp_nodes.len());
+        for &id in &self.prog.interp_nodes {
+            let Node::Interpolated { input, .. } = self.prog.nodes[id as usize] else { unreachable!() };
+            let mut values = vec![0.0; count];
+            self.eval_batch(input, &batch, &all, &mut values, &mut memo);
+            corners.push(values);
+        }
+        self.interp = corners;
     }
 
     pub fn eval(&self, id: u32, p: &Pt) -> f64 {
@@ -191,8 +206,20 @@ impl<'a> Eval<'a> {
                     self.eval(input, p)
                 }
             }
-            // y-independent (checked at parse time), so caching by x/z is a no-op
-            Node::Cache2D(input) => self.eval(input, p),
+            // y-independent (checked at parse time), so remembering the last
+            // column is exact - and it matters a lot for the preliminary
+            // surface search, which walks one column top to bottom
+            Node::Cache2D { input, slot } => {
+                let s = slot as usize;
+                if self.cache2d_pos[s].get() == (p.x, p.z) {
+                    self.cache2d_value[s].get()
+                } else {
+                    let v = self.eval(input, p);
+                    self.cache2d_pos[s].set((p.x, p.z));
+                    self.cache2d_value[s].set(v);
+                    v
+                }
+            }
             Node::CacheOnce { input, slot } => {
                 let s = slot as usize;
                 let now = self.stamp.get();
@@ -358,4 +385,21 @@ fn rarity_2d(v: f64) -> f64 {
     } else {
         3.0
     }
+}
+
+// shared with the batch evaluator
+pub fn mapped_pub(kind: MapKind, v: f64) -> f64 {
+    mapped(kind, v)
+}
+
+pub fn rarity_pub(kind: u8, v: f64) -> f64 {
+    if kind == 1 { rarity_3d(v) } else { rarity_2d(v) }
+}
+
+pub fn find_interval_start_pub(locations: &[f32], f: f32) -> i32 {
+    find_interval_start(locations, f)
+}
+
+pub fn linear_extend_pub(f: f32, locations: &[f32], value: f32, derivatives: &[f32], i: usize) -> f32 {
+    linear_extend(f, locations, value, derivatives, i)
 }
