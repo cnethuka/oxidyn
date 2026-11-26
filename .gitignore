@@ -1,0 +1,22 @@
+# gradle
+.gradle/
+build/
+out/
+run/
+runs/
+
+# ide
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# rust
+native/target/
+
+# os junk
+.DS_Store
+Thumbs.db
