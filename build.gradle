@@ -142,6 +142,8 @@ def cargoBuild = tasks.register('cargoBuild', Exec) {
 // the other platforms) is bundled as well.
 def stageNatives = tasks.register('stageNatives', Sync) {
     dependsOn cargoBuild
+    // a fresh host build wins over whatever is sitting in native/dist
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(file('native/target/release')) {
         include 'liboxidyn.so', 'liboxidyn.dylib', 'oxidyn.dll'
         into "natives/${hostPlatform()}"
