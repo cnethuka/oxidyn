@@ -1,6 +1,7 @@
 package dev.oxidyn.mixin.gen;
 
 import dev.oxidyn.Features;
+import dev.oxidyn.gen.FillStats;
 import dev.oxidyn.gen.NativeChunkFill;
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.StructureManager;
@@ -32,12 +33,24 @@ public abstract class NoiseBasedChunkGeneratorMixin {
     @Inject(method = "doFill", at = @At("HEAD"), cancellable = true)
     private void oxidyn$nativeFill(Blender blender, StructureManager structures, RandomState random, ChunkAccess chunk,
                                    int minCellY, int cellCountY, CallbackInfoReturnable<ChunkAccess> cir) {
-        if (!Features.chunkFill || blender != Blender.empty()) return;
-        // same NoiseChunk vanilla would use; we only need its beardifier
-        NoiseChunk noiseChunk = chunk.getOrCreateNoiseChunk(c -> createNoiseChunk(c, structures, blender, random));
-        var picker = ((NoiseBasedChunkGeneratorAccessor) this).oxidyn$fluidPicker().get();
-        if (NativeChunkFill.fill(settings.value(), random, picker, chunk, noiseChunk, minCellY, cellCountY)) {
-            cir.setReturnValue(chunk);
+        long start = System.nanoTime();
+        if (Features.chunkFill && blender == Blender.empty()) {
+            // same NoiseChunk vanilla would use; we only need its beardifier
+            NoiseChunk noiseChunk = chunk.getOrCreateNoiseChunk(c -> createNoiseChunk(c, structures, blender, random));
+            var picker = ((NoiseBasedChunkGeneratorAccessor) this).oxidyn$fluidPicker().get();
+            if (NativeChunkFill.fill(settings.value(), random, picker, chunk, noiseChunk, minCellY, cellCountY)) {
+                FillStats.nativeFill(start);
+                cir.setReturnValue(chunk);
+                return;
+            }
         }
+        FillStats.vanillaStarted(start);
+    }
+
+    // only reached when vanilla did the fill, the native path returns early
+    @Inject(method = "doFill", at = @At("RETURN"))
+    private void oxidyn$vanillaFillDone(Blender blender, StructureManager structures, RandomState random, ChunkAccess chunk,
+                                        int minCellY, int cellCountY, CallbackInfoReturnable<ChunkAccess> cir) {
+        FillStats.vanillaFinished();
     }
 }

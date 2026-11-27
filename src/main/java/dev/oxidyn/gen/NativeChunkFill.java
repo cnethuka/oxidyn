@@ -61,7 +61,9 @@ public final class NativeChunkFill {
         if (router.verified == 0) {
             synchronized (router) {
                 if (router.verified == 0) {
+                    long t = System.nanoTime();
                     boolean ok = FillVerifier.matches(settings, ns, random, picker, chunk.getPos().x, chunk.getPos().z);
+                    FillStats.verification(System.nanoTime() - t);
                     router.verified = ok ? 1 : -1;
                     if (ok) Oxidyn.LOG.info("Native chunk fill verified against vanilla for this dimension");
                 }
