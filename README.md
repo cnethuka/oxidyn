@@ -137,6 +137,18 @@ Oxidyn native library: loaded liboxidyn.so (abi 1, Java 22)
 Active: noise=true chunkFill=true translucentSort=true regionZlib=true (level 6) networkZlib=true (level 6)
 ```
 
+`/oxidyn stats` times the noise fill step for every chunk generated since
+startup (`/oxidyn stats reset` clears it, ops only). To compare against
+vanilla on your own machine, flip `nativeChunkFill` to `false` in the config
+while the game is running, generate somewhere new, and look again:
+
+```
+Noise fill step, per chunk (terrain, caves, aquifers, ore veins):
+  native  331 chunks, 9.25 ms average
+  vanilla 441 chunks, 15.83 ms average
+  native is 1.71x the speed of vanilla
+```
+
 The config lives in `config/oxidyn-common.toml`:
 
 ```toml
